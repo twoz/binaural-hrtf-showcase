@@ -1,0 +1,36 @@
+# MTL written from C:\Users\BOA\Desktop\78b.obj
+newmtl Cornea
+Kd 0 0 0
+Ns 1448.15
+d 0
+illum 2
+Ka 0 0 0
+Ks 0.533333 0.533333 0.533333
+newmtl Eye
+Kd 0.941176 0.941176 0.941176
+Ns 256
+d 1
+illum 2
+Ka 0 0 0
+Ks 0 0 0
+newmtl Iris
+Kd 0.671226 0.730309 0.8
+Ns 256
+d 1
+illum 2
+Ka 0 0 0
+Ks 0.2 0.2 0.2
+newmtl Pupil
+Kd 0.0542992 0.0542992 0.0542992
+Ns 4096
+d 1
+illum 2
+Ka 0 0 0
+Ks 0 0 0
+newmtl Skin
+Kd 0.9 0.9 0.9
+Ns 16
+d 1
+illum 2
+Ka 0 0 0
+Ks 0.05 0.05 0.05

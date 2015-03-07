@@ -1,0 +1,312 @@
+<!doctype html>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<html lang="en">
+<head>
+	<title></title>
+</head>
+<body style="background-color:black">
+	<script src="js/three.min.js"></script>
+	<script src="js/dat.gui.min.js"></script>
+	<script src="js/stats.min.js"></script>
+	<script src="js/OBJMTLLoader.js"></script>
+	<script src="js/MTLLoader.js"></script>
+	<script src="js/FlyControls.js"></script>
+	<script src="js/delaunay.js"></script>
+	<script src="js/hrtf.js"></script>
+
+	<audio id="player0" src="assets/audio/core3.mp3" loop="loop" autoplay="autoplay"></audio>
+	<audio id="player1" src="assets/audio/trumpet.ogg" loop="loop" autoplay="autoplay"></audio>
+	<audio id="player2" src="assets/audio/square.wav" loop="loop" autoplay="autoplay"></audio>
+
+	<script>
+
+		var scene, renderer, controls, stats;
+		var maleHead, femaleHead;
+		var sources = [], current, masterGain;
+		var orbiter, pattern = 1;
+		var clock = new THREE.Clock();
+		var panner, hrtfContainer;
+		var views = [
+				{
+					left: 0,
+					bottom: 0,
+					width: 0.7,
+					height: 1.0,
+					background: new THREE.Color().setRGB(0.5, 0.5, 0.7),
+					pos: [0, 0, 0],
+					up: [0, 1, 0],
+					lookAt: [0, 0, 1],
+					fov: 45,
+				},
+				{
+					left: 0.7,
+					bottom: 0.5,
+					width: 0.3,
+					height: 0.5,
+					background: new THREE.Color().setRGB(0.7, 0.5, 0.5),
+					pos: [3, 0, 0],
+					up: [0, 1, 0],
+					lookAt: [0, 0, 0],
+					fov: 45,
+				},
+				{
+					left: 0.7,
+					bottom: 0,
+					width: 0.3,
+					height: 0.5,
+					background: new THREE.Color().setRGB(0.5, 0.7, 0.5),
+					pos: [0, 3, 0],
+					up: [0, 1, 0],
+					lookAt: [0, 0, 0],
+					fov: 45
+				}
+		];
+
+		init();
+		animate();
+
+		function init() {
+
+			var FAR = 100;
+
+			stats = initStats();
+
+			scene = new THREE.Scene();
+			for (var i = 0; i < views.length; ++i) {
+				var view = views[i];
+				var camera = new THREE.PerspectiveCamera(view.fov, window.innerWidth / window.innerHeight, 0.5, FAR);
+				camera.position.set(view.pos[0], view.pos[1], view.pos[2]);
+				camera.up.set(view.up[0], view.up[1], view.up[2]);
+				camera.lookAt(new THREE.Vector3(view.lookAt[0], view.lookAt[1], view.lookAt[2]));
+				view.camera = camera;
+			}
+
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.setPixelRatio(window.devicePixelRatio);
+			document.body.appendChild(renderer.domElement);
+
+			controls = new THREE.FlyControls(views[0].camera, renderer.domElement);
+			controls.movementSpeed = 0;
+			controls.rollSpeed = Math.PI / 6;
+			controls.autoForward = false;
+			controls.dragToLook = true;
+
+			var light = new THREE.PointLight(0xffffff);
+			light.position.set(-100, 200, 100);
+			scene.add(light);
+
+			var ambientLight = new THREE.AmbientLight(0xffffff);
+			scene.add(ambientLight);
+
+			scene.add(new THREE.AxisHelper(FAR));
+
+			// orbiter
+			orbiter = new THREE.Mesh(new THREE.SphereGeometry(0.1, 64, 64), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+			scene.add(orbiter);
+			// wireframe sphere
+			scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ wireframe: true })));
+
+			// load female head for now
+			// TODO: male head
+			var loader = new THREE.OBJMTLLoader();
+			loader.load("assets/obj/head_F.obj", "assets/obj/head_F.mtl", function (object) {
+				object.position.y -= 0.7;
+				object.scale.set(2, 2, 2);
+				scene.add(object);
+				femaleHead = object;
+			});
+
+			// DATABASE
+			hrtfContainer = new HRTFContainer();
+			hrtfContainer.loadDatabase(function () {
+				initAudio();
+				initGUI();
+				hrtfContainer.nextSubject();
+			});
+		}
+
+		function initAudio() {
+
+			try {
+				var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+			}
+			catch (e) {
+				alert("Web Audio API is not supported in this browser");
+			}
+
+			for (var i = 0; i < 3; ++i) {
+				var mediaElement = document.getElementById("player" + i.toString());
+				var source = audioContext.createMediaElementSource(mediaElement);
+				source.mediaElement = mediaElement;
+				source.position = orbiter.position;
+				sources.push(source);
+			}
+
+			masterGain = audioContext.createGain();
+			masterGain.connect(audioContext.destination);
+			masterGain.gain.value = 0.8;
+			panner = new HRTFPanner(audioContext, hrtfContainer, sources[0], views[0].camera);
+			panner.connect(masterGain);
+
+		}
+
+		function initStats() {
+
+			var stats = new Stats();
+			stats.setMode(0);
+
+			stats.domElement.style.position = "absolute";
+			stats.domElement.style.left = "0px";
+			stats.domElement.style.top = "30px";
+
+			document.body.appendChild(stats.domElement);
+
+			return stats;
+		}
+
+		function initGUI() {
+
+			var gui = new dat.GUI();
+			gui.width = 300;
+
+			var params = {
+				id: 0.0,
+				name: "",
+				headWidth: 0.01,
+				headHeight: 0.01,
+				headDepth: 0.01,
+			};
+
+			setInterval(function () {
+				var currentSubject = hrtfContainer.currentSubject();
+				if (typeof currentSubject != "undefined") {
+					params.id = currentSubject.id;
+					params.name = currentSubject.name;
+					params.headWidth = currentSubject.headWidth;
+					params.headHeight = currentSubject.headHeight;
+					params.headDepth = currentSubject.headDepth;
+				}
+			}, 1000);
+
+			var folder1 = gui.addFolder("HRTF");
+			folder1.add({ db: "CIPIC" }, "db").name("Database");
+			folder1.add(params, "id").name("Subject ID").listen();
+			folder1.add(params, "name").name("name").listen();
+			folder1.add(params, "headWidth").name("Head Width [cm]").listen();
+			folder1.add(params, "headHeight").name("Head Height [cm]").listen();
+			folder1.add(params, "headDepth").name("Head Depth [cm]").listen();
+			folder1.add(hrtfContainer, "nextSubject").name("NEXT SUBJECT");
+			folder1.add(hrtfContainer, "prevSubject").name("PREV SUBJECT");
+
+			var folder2 = gui.addFolder("Panner settings");
+			folder2.add({ f: 200 }, "f").min(0).max(5000).name("Crossover frequency").onChange(function (value) {
+				panner.setCrossoverFrequency(value);
+			});
+			folder2.add({ t: 20 }, "t").min(10).max(1000).name("Update interval").onChange(function (value) {
+				panner.setUpdateInterval(value);
+			});
+
+			var o = {
+				pause: function () {
+					if (sources[current].mediaElement.paused)
+						sources[current].mediaElement.play();
+					else
+						sources[current].mediaElement.pause();
+				},
+				gain: 0.8,
+				sound: "",
+				pattern: 1
+			}
+			var folder3 = gui.addFolder("Sound source");
+			folder3.add(o, "pause").name("Play/Pause");
+			folder3.add(o, "gain").min(0).max(1).name("Volume").onChange(function (value) {
+				masterGain.gain.value = value;
+			});
+			folder3.add(o, "sound").options({ "Robot": 0, "Trumpet": 1, "Saw": 2 }).name("Sound").onChange(function (value) {
+				current = value;
+				panner.setSource(sources[current]);
+			});
+			folder3.add(o, "pattern").options(1, 2, 3).name("Orbit pattern").onChange(function (value) {
+				pattern = value;
+			});
+		}
+
+		function animate() {
+
+			requestAnimationFrame(animate);
+			render();
+			update();
+		}
+
+		function update() {
+
+			var delta = clock.getDelta();
+			controls.update(delta);
+			stats.update();
+			animateSource();
+		}
+
+		var t = 0;
+		function animateSource() {
+			var R = 1;
+			if (pattern == 1) {
+				orbiter.position.x = R * Math.cos(t);
+				orbiter.position.y = 0;
+				orbiter.position.z = R * Math.sin(t);
+			}
+			else if (pattern == 2) {
+				orbiter.position.x = 0;
+				orbiter.position.y = R * Math.cos(t);
+				orbiter.position.z = R * Math.sin(t);
+			}
+			else if (pattern == 3) {
+				orbiter.position.x = R * Math.sin(t) * Math.cos(t);
+				orbiter.position.y = R * Math.cos(t) * Math.cos(t);
+				orbiter.position.z = R * Math.sin(t);
+			}
+			t += 0.01;
+		}
+
+		function updateSize() {
+
+			if (windowWidth != window.innerWidth || windowHeight != window.innerHeight) {
+
+				windowWidth = window.innerWidth;
+				windowHeight = window.innerHeight;
+
+				renderer.setSize(windowWidth, windowHeight);
+			}
+		}
+
+		function render() {
+
+			//updateSize();
+
+			for (var i = 0; i < views.length; ++i) {
+
+				view = views[i];
+				camera = view.camera;
+
+				var left = Math.floor(window.innerWidth * view.left);
+				var bottom = Math.floor(window.innerHeight * view.bottom);
+				var width = Math.floor(window.innerWidth * view.width);
+				var height = Math.floor(window.innerHeight * view.height);
+				renderer.setViewport(left, bottom, width, height);
+				renderer.setScissor(left, bottom, width, height);
+				renderer.enableScissorTest(true);
+				renderer.setClearColor(view.background);
+
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+
+				renderer.render(scene, camera);
+			}
+
+		}
+
+	</script>
+
+</body>
+
+</html>
