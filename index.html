@@ -8,6 +8,7 @@
 	<script src="js/three.min.js"></script>
 	<script src="js/dat.gui.min.js"></script>
 	<script src="js/stats.min.js"></script>
+	<script src="js/OBJLoader.js"></script>
 	<script src="js/OBJMTLLoader.js"></script>
 	<script src="js/MTLLoader.js"></script>
 	<script src="js/FlyControls.js"></script>
@@ -21,9 +22,10 @@
 	<script>
 
 		var scene, renderer, controls, stats;
+		var windowWidth, windowHeight;
 		var maleHead, femaleHead;
-		var sources = [], current, masterGain;
-		var orbiter, pattern = 1;
+		var sources = [], current = 0, masterGain;
+		var orbiter, pattern = 1, orbitSpeed = 0.01;
 		var clock = new THREE.Clock();
 		var panner, hrtfContainer;
 		var views = [
@@ -67,17 +69,16 @@
 
 		function init() {
 
-			var FAR = 100;
-
 			stats = initStats();
 
 			scene = new THREE.Scene();
 			for (var i = 0; i < views.length; ++i) {
 				var view = views[i];
-				var camera = new THREE.PerspectiveCamera(view.fov, window.innerWidth / window.innerHeight, 0.5, FAR);
+				var camera = new THREE.PerspectiveCamera(view.fov, window.innerWidth / window.innerHeight, 0.5, 100);
 				camera.position.set(view.pos[0], view.pos[1], view.pos[2]);
 				camera.up.set(view.up[0], view.up[1], view.up[2]);
 				camera.lookAt(new THREE.Vector3(view.lookAt[0], view.lookAt[1], view.lookAt[2]));
+				scene.add(camera);
 				view.camera = camera;
 			}
 
@@ -93,29 +94,34 @@
 			controls.dragToLook = true;
 
 			var light = new THREE.PointLight(0xffffff);
-			light.position.set(-100, 200, 100);
+			light.position.set(1, 2, -1);
 			scene.add(light);
 
-			var ambientLight = new THREE.AmbientLight(0xffffff);
-			scene.add(ambientLight);
-
-			scene.add(new THREE.AxisHelper(FAR));
-
 			// orbiter
-			orbiter = new THREE.Mesh(new THREE.SphereGeometry(0.1, 64, 64), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+			orbiter = new THREE.Mesh(new THREE.SphereGeometry(0.1, 64, 64), new THREE.MeshPhongMaterial({color: 0x000000}));
 			scene.add(orbiter);
 			// wireframe sphere
-			scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ wireframe: true })));
+			scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ color: 0xcccccc, wireframe: true })));
 
-			// load female head for now
-			// TODO: male head
+			// load head models
 			var loader = new THREE.OBJMTLLoader();
 			loader.load("assets/obj/head_F.obj", "assets/obj/head_F.mtl", function (object) {
 				object.position.y -= 0.7;
-				object.scale.set(2, 2, 2);
-				scene.add(object);
+				object.scale.set(2.2, 2.2, 2.2);
+				object.rotation.y += Math.PI;
+				views[0].camera.add(object);
 				femaleHead = object;
+				femaleHead.visible = false;
 			});
+
+			var loader = new THREE.OBJLoader();
+			loader.load("assets/obj/head_M.obj", function (object) {
+				object.scale.set(0.015, 0.015, 0.015);
+				object.rotation.y += Math.PI;
+				views[0].camera.add(object);
+				maleHead = object;
+				maleHead.visible = false;
+			}); 
 
 			// DATABASE
 			hrtfContainer = new HRTFContainer();
@@ -142,7 +148,6 @@
 				source.position = orbiter.position;
 				sources.push(source);
 			}
-			current = 0;
 
 			masterGain = audioContext.createGain();
 			masterGain.connect(audioContext.destination);
@@ -187,13 +192,21 @@
 					params.headWidth = currentSubject.headWidth;
 					params.headHeight = currentSubject.headHeight;
 					params.headDepth = currentSubject.headDepth;
+					if (currentSubject.name[0] == "M") {
+						maleHead.visible = true;
+						femaleHead.visible = false;
+					}
+					else {
+						maleHead.visible = false;
+						femaleHead.visible = true;
+					}
 				}
 			}, 1000);
 
 			var folder1 = gui.addFolder("HRTF");
 			folder1.add({ db: "CIPIC" }, "db").name("Database");
 			folder1.add(params, "id").name("Subject ID").listen();
-			folder1.add(params, "name").name("name").listen();
+			folder1.add(params, "name").name("Name").listen();
 			folder1.add(params, "headWidth").name("Head Width [cm]").listen();
 			folder1.add(params, "headHeight").name("Head Height [cm]").listen();
 			folder1.add(params, "headDepth").name("Head Depth [cm]").listen();
@@ -217,7 +230,8 @@
 				},
 				gain: 0.8,
 				sound: "",
-				pattern: 1
+				pattern: 1,
+				speed: orbitSpeed
 			}
 			var folder3 = gui.addFolder("Sound source");
 			folder3.add(o, "pause").name("Play/Pause");
@@ -231,6 +245,10 @@
 			folder3.add(o, "pattern").options(1, 2, 3).name("Orbit pattern").onChange(function (value) {
 				pattern = value;
 			});
+			folder3.add(o, "speed").min(0).max(0.1).name("Orbit speed").onChange(function (value) {
+				orbitSpeed = value;
+			});
+			folder3.open();
 		}
 
 		function animate() {
@@ -242,15 +260,16 @@
 
 		function update() {
 
-			var delta = clock.getDelta();
-			controls.update(delta);
+			controls.update(clock.getDelta());
 			stats.update();
+			updateSize();
 			animateSource();
 		}
 
 		var t = 0;
 		function animateSource() {
 			var R = 1;
+			orbiter.lookAt(scene.position);
 			if (pattern == 1) {
 				orbiter.position.x = R * Math.cos(t);
 				orbiter.position.y = 0;
@@ -266,7 +285,7 @@
 				orbiter.position.y = R * Math.cos(t) * Math.cos(t);
 				orbiter.position.z = R * Math.sin(t);
 			}
-			t += 0.01;
+			t += orbitSpeed;
 		}
 
 		function updateSize() {
@@ -281,9 +300,7 @@
 		}
 
 		function render() {
-
-			//updateSize();
-
+		
 			for (var i = 0; i < views.length; ++i) {
 
 				view = views[i];
