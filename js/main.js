@@ -159,7 +159,7 @@ window.onload = function() {
 			},
 			crossoverFrequency: 200,
 			updateInterval: 20,
-			gain: 0.8,
+			gain: masterGain.gain.value,
 			sound: "",
 			pattern: 1,
 			speed: orbitSpeed
@@ -203,7 +203,7 @@ window.onload = function() {
 	function hrirFilenameFromId(id) {
 
 		id = parseInt(id);
-		var filename = "hrtf/subject_";
+		var filename = "HRTF/CIPIC/subject_";
 		if (id < 100 && id >= 10)
 			filename += '0';
 		else if (id < 10)
@@ -242,6 +242,9 @@ window.onload = function() {
 			subject.hrtfContainer = new HRTFContainer();
 			subject.hrtfContainer.loadHrir(hrirFilenameFromId(subject.id), onLoad);
 		}
+		else
+			onLoad();
+
 		for (var key in subject)
 			currentSubject[key] = subject[key];
 		if (subject.name == 'F') {
@@ -257,7 +260,7 @@ window.onload = function() {
 	function loadSubjectsData() {
 
 		var oReq = new XMLHttpRequest();
-		oReq.open("GET", "hrtf/anthro.txt", true);
+		oReq.open("GET", "HRTF/CIPIC/anthro.txt", true);
 		oReq.onreadystatechange = function() {
 			if (oReq.readyState === 4) {
 				var lines = oReq.responseText.split('\n');
