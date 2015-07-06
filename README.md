@@ -7,5 +7,4 @@ Creating binaural sound by panning a sound source using HRTF allows to position 
 
 Since each every human's head is geometrically different, different HRTFs gives worse or better results for different people. Here You can choose (in real-time) from 45 different HRTFs from [CIPIC Database](http://interface.cipic.ucdavis.edu/sound/hrtf.html)
 
-## Usage
-Open [tmwoz.github.io/binaural-hrtf-showcase](tmwoz.github.io/binaural-hrtf-showcase). 
+View it [here](http://tmwoz.github.io/binaural-hrtf-showcase/).
